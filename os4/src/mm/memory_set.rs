@@ -1,6 +1,5 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
-
 use super::address::Addr;
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
@@ -59,6 +58,24 @@ impl MemorySet {
             MapArea::new(start_va, end_va, MapType::Framed, permission),
             None,
         );
+    }
+    pub fn remove_framed_area(&mut self, start: usize, end: usize) {
+        let pt = &mut self.page_table;
+        self.areas.iter_mut().for_each(|item| {
+            let (l, r) = item.get_l_r();
+            if start <= l.into() && r < end.into() {
+                item.unmap(pt);
+            }
+        })
+    }
+    pub fn clean_area(&mut self) {
+        // let res: Vec<MapArea> =
+        self.areas = self
+            .areas
+            .clone()
+            .into_iter()
+            .filter(|item| item.data_frames.len() > 0)
+            .collect::<Vec<MapArea>>();
     }
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
@@ -218,10 +235,18 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
-    
+    pub fn get_l_r(&self) -> (VirtPageNum, VirtPageNum) {
+        self.areas
+            .iter()
+            .fold((MEMORY_END.into(), 0x0000_0000.into()), |(l, r), area| {
+                let (_l, _r) = area.get_l_r();
+                (l.min(_l), r.max(_r))
+            })
+    }
 }
 
 /// map area structure, controls a contiguous piece of virtual memory
+#[derive(Clone)]
 pub struct MapArea {
     vpn_range: VPNRange,
     data_frames: BTreeMap<VirtPageNum, FrameTracker>,
@@ -309,7 +334,10 @@ impl MapArea {
         // .cycle()
         // .zip(data.iter())
         // .
-        
+    }
+
+    pub fn get_l_r(&self) -> (VirtPageNum, VirtPageNum) {
+        (self.vpn_range.get_start(), self.vpn_range.get_end())
     }
 }
 

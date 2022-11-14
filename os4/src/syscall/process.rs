@@ -7,7 +7,8 @@ use alloc::task;
 use crate::config::MAX_SYSCALL_NUM;
 use crate::mm::{Addr, PageTable, VirtAddr};
 use crate::task::{
-    current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus, get_task_info,
+    current_user_token, exit_current_and_run_next, get_slice_buffer, get_task_info, mmap,
+    suspend_current_and_run_next, TaskStatus, munmap,
 };
 use crate::timer::get_time_us;
 #[repr(C)]
@@ -43,27 +44,20 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
         sec: _us / 1_000_000,
         usec: _us % 1_000_000,
     };
-    let satp = current_user_token();
-    let pt = PageTable::from_token(satp);
-    let va = VirtAddr::from(_ts as usize);
-    let vpn = va.floor();
-    if pt.translate(vpn).is_none() {
-        return -1;
+    if let Some(buffer) = get_slice_buffer(_ts as usize) {
+        let data = unsafe {
+            slice::from_raw_parts(
+                (&ts as *const TimeVal) as *const u8,
+                mem::size_of::<TimeVal>(),
+            )
+        };
+        data.iter().enumerate().for_each(|(i, d)| {
+            buffer[i] = *d;
+        });
+        0
+    } else {
+        -1
     }
-    let pte = pt.translate(vpn).unwrap();
-    let ppn = pte.ppn();
-
-    let buffer = ppn.get_bytes_array();
-    let offset = va.page_offset();
-
-    let data = unsafe {slice::from_raw_parts(
-        (&ts as *const TimeVal) as *const u8,
-        mem::size_of::<TimeVal>(),
-    )};
-    data.iter().enumerate().for_each(|(i,d)| {
-        buffer[offset + i] = *d;
-    });
-    0
 }
 
 // CLUE: 从 ch4 开始不再对调度算法进行测试~
@@ -73,35 +67,36 @@ pub fn sys_set_priority(_prio: isize) -> isize {
 
 // YOUR JOB: 扩展内核以实现 sys_mmap 和 sys_munmap
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    0
+    
+    if _len == 0 {return  0;}
+    // 0，1，2位有效，其他位必须为0,mask => b 0...0111 =>0x7
+    if _port & 0x7 == 0 || _port & !0x7 != 0 || (_start % 4096) != 0 {
+        return -1;
+    }
+
+    mmap(_start, _len, _port as u8)
 }
 
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    -1
+    if _len == 0 {return  0;}
+    munmap(_start,_len)
 }
 
 // YOUR JOB: 引入虚地址后重写 sys_task_info
 pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     let task_info = get_task_info();
-    let satp = current_user_token();
-    let pt = PageTable::from_token(satp);
-    let va = VirtAddr::from(ti as usize);
-    let vpn = va.floor();
-    if pt.translate(vpn).is_none() {
-        return -1;
+    if let Some(buffer) = get_slice_buffer(ti as usize) {
+        let data = unsafe {
+            slice::from_raw_parts(
+                (&task_info as *const TaskInfo) as *const u8,
+                mem::size_of::<TaskInfo>(),
+            )
+        };
+        data.iter().enumerate().for_each(|(i, &d)| {
+            buffer[i] = d;
+        });
+        0
+    } else {
+        -1
     }
-    let pte = pt.translate(vpn).unwrap();
-    let ppn = pte.ppn();
-
-    let buffer = ppn.get_bytes_array();
-    let offset = va.page_offset();
-
-    let data = unsafe {slice::from_raw_parts(
-        (&task_info as *const TaskInfo) as *const u8,
-        mem::size_of::<TaskInfo>(),
-    )};
-    data.iter().enumerate().for_each(|(i,d)| {
-        buffer[offset + i] = *d;
-    });
-    0
 }

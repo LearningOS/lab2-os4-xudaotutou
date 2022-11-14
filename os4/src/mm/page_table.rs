@@ -3,7 +3,6 @@
 use super::{
     address::Addr, frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum,
 };
-use _core::ops::ControlFlow;
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;

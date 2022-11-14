@@ -14,7 +14,9 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::PAGE_SIZE;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{Addr, MapPermission, PageTable, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::syscall::TaskInfo;
 use crate::timer::get_time_us;
@@ -80,6 +82,7 @@ impl TaskManager {
     fn run_first_task(&self) -> ! {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
+        Self::set_task_time(next_task);
         next_task.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
@@ -135,6 +138,7 @@ impl TaskManager {
         if let Some(next) = self.find_next_task() {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
+            Self::set_task_time(&mut inner.tasks[next]);
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
@@ -163,6 +167,23 @@ impl TaskManager {
         if cur.start_time == 0 {
             cur.start_time = get_time_us();
         }
+    }
+
+    pub fn get_slice_buffer(&self, start: usize) -> Option<&'static mut [u8]> {
+        let satp = self.get_current_token();
+        let pt = PageTable::from_token(satp);
+        let va = VirtAddr::from(start);
+        let vpn = va.floor();
+        if pt.translate(vpn).is_none() {
+            return None;
+        }
+        let pte = pt.translate(vpn).unwrap();
+        let ppn = pte.ppn();
+
+        let buffer = ppn.get_bytes_array();
+        let offset = va.page_offset();
+        // 可能会越出当前页?
+        Some(&mut buffer[offset..])
     }
 }
 
@@ -209,6 +230,55 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
     TASK_MANAGER.get_current_trap_cx()
 }
 
-pub fn get_task_info()->TaskInfo{
+pub fn get_task_info() -> TaskInfo {
     TASK_MANAGER.get_task_info()
+}
+
+pub fn get_slice_buffer(start: usize) -> Option<&'static mut [u8]> {
+    TASK_MANAGER.get_slice_buffer(start)
+}
+
+fn mem_in_range(cur_tcb: &TaskControlBlock, start: usize, end: usize) -> bool {
+    let (l, r) = (VirtAddr::from(start), VirtAddr::from(end));
+    let (lvpn, rvpn) = (l.floor(), r.ceil());
+    let (lmin, rmax) = cur_tcb.memory_set.get_l_r();
+    if lvpn < lmin || rvpn > rmax {
+        return false;
+    }
+    true
+}
+
+pub fn mmap(start: usize, len: usize, port: u8) -> isize {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let idx = inner.current_task;
+    let cur_tcb = &mut inner.tasks[idx];
+
+    if !mem_in_range(cur_tcb, start, start + len) {
+        return -1;
+    };
+
+    let mut permission = MapPermission::from_bits(port << 1).unwrap();
+    permission.set(MapPermission::U, true);
+
+    let end = start + len;
+    (0..end).step_by(PAGE_SIZE).for_each(|l| {
+        let r = end.min(l + PAGE_SIZE);
+        cur_tcb
+            .memory_set
+            .insert_framed_area(l.into(), r.into(), permission);
+    });
+    0
+}
+
+pub fn munmap(start: usize, len: usize) -> isize {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let idx = inner.current_task;
+    let cur_tcb = &mut inner.tasks[idx];
+    if !mem_in_range(cur_tcb, start, start + len) {
+        return -1;
+    }
+
+    cur_tcb.memory_set.remove_framed_area(start, start + len);
+    cur_tcb.memory_set.clean_area();
+    0
 }
