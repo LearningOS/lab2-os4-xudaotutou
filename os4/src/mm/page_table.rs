@@ -1,8 +1,6 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use super::{
-    address::Addr, frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum,
-};
+use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -46,6 +44,7 @@ impl PageTableEntry {
         PTEFlags::from_bits(self.bits as u8).unwrap()
     }
     pub fn is_valid(&self) -> bool {
+        // println!("is_valid: {:?}", self.flags());
         (self.flags() & PTEFlags::V) != PTEFlags::empty()
     }
     pub fn readable(&self) -> bool {
@@ -82,29 +81,32 @@ impl PageTable {
         }
     }
     fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
-        // let mut idxs = vpn.indexes();
+        // let idxs = vpn.indexes();
         // let mut ppn = self.root_ppn;
         // let mut result: Option<&mut PageTableEntry> = None;
-        // for (i, idx) in idxs.iter_mut().enumerate() {
-        //     let pte = &mut ppn.get_pte_array()[*idx];
+        // for i in 0..3 {
+        //     let pte = &mut ppn.get_pte_array()[idxs[i]];
         //     if i == 2 {
         //         result = Some(pte);
         //         break;
         //     }
         //     if !pte.is_valid() {
-        //         // 申请了一个frame来放实体
         //         let frame = frame_alloc().unwrap();
         //         *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
         //         self.frames.push(frame);
         //     }
-        //     // 指向下一个节点
         //     ppn = pte.ppn();
         // }
-        vpn.indexes()
+        // result;
+        vpn.indexes() // 遍历三个虚拟页号
             .iter()
-            .fold((self.root_ppn, None), |(ppn, _), &idx| {
+            .enumerate()
+            .fold((self.root_ppn, None), |(ppn, _), (i,&idx)| {
                 let pte = &mut ppn.get_pte_array()[idx];
 
+                if i == 2 {
+                    return (pte.ppn(), Some(pte));
+                }
                 if !pte.is_valid() {
                     // 申请了一个frame来放实体
                     let frame = frame_alloc().unwrap();
@@ -113,7 +115,8 @@ impl PageTable {
                 }
                 // 指向下一个节点
                 // 目前来看没有必要去打断来生成None
-                (pte.ppn(), Some(pte))
+                // 这里第三次间指必须要跳过，应该已经不是页表管理了
+                (pte.ppn(), None)
             })
             .1
     }
@@ -153,6 +156,8 @@ impl PageTable {
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
+        // println!("[pte] is_valid {:?}", pte.is_valid());
+        // assert!(pte.is_valid());
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
     }

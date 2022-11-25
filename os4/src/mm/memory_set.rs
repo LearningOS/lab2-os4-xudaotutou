@@ -1,6 +1,5 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
-use super::address::Addr;
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -34,7 +33,7 @@ lazy_static! {
 /// memory set structure, controls virtual-memory space
 pub struct MemorySet {
     page_table: PageTable,
-    areas: Vec<MapArea>,
+    pub areas: Vec<MapArea>,
 }
 
 impl MemorySet {
@@ -86,6 +85,7 @@ impl MemorySet {
     }
     /// Mention that trampoline is not collected by areas.
     fn map_trampoline(&mut self) {
+        // println!("[trampoline] vpn: {}",VirtPageNum::from( VirtAddr::from(TRAMPOLINE)).0);
         self.page_table.map(
             VirtAddr::from(TRAMPOLINE).into(),
             PhysAddr::from(strampoline as usize).into(),
@@ -96,6 +96,7 @@ impl MemorySet {
     pub fn new_kernel() -> Self {
         let mut memory_set = Self::new_bare();
         // map trampoline
+        println!("memory_set:{:#x}",memory_set.token());
         memory_set.map_trampoline();
         // map kernel sections
         info!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
@@ -240,7 +241,9 @@ impl MemorySet {
             .iter()
             .fold((MEMORY_END.into(), 0x0000_0000.into()), |(l, r), area| {
                 let (_l, _r) = area.get_l_r();
-                (l.min(_l), r.max(_r))
+                let (l,r) = (l.min(_l), r.max(_r));
+                info!("[memeory set get_l_r] vpl:{},vpr:{}",l.0,r.0);
+                (l, r)
             })
     }
 }
@@ -283,6 +286,7 @@ impl MapArea {
             }
         }
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
+        // println!("[map one] vpn:{},ppn:{}",vpn.0,ppn.0 );
         page_table.map(vpn, ppn, pte_flags);
     }
     #[allow(unused)]
@@ -297,6 +301,7 @@ impl MapArea {
         page_table.unmap(vpn);
     }
     pub fn map(&mut self, page_table: &mut PageTable) {
+        info!("vpn_range: start: {:?}, end: {:?}", self.vpn_range.get_start(), self.vpn_range.get_end());
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
         }
@@ -337,7 +342,12 @@ impl MapArea {
     }
 
     pub fn get_l_r(&self) -> (VirtPageNum, VirtPageNum) {
-        (self.vpn_range.get_start(), self.vpn_range.get_end())
+        let (l, r) = (self.vpn_range.get_start(), self.vpn_range.get_end());
+        info!("memeory area, l:{:?},r:{:?}",l, r );
+        (l, r)
+    }
+    pub fn get_start(&self)->VirtPageNum{
+        self.vpn_range.get_start()
     }
 }
 

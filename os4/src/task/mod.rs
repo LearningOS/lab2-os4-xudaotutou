@@ -16,7 +16,7 @@ mod task;
 
 use crate::config::PAGE_SIZE;
 use crate::loader::{get_app_data, get_num_app};
-use crate::mm::{Addr, MapPermission, PageTable, VirtAddr};
+use crate::mm::{ MapPermission, PageTable, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::syscall::TaskInfo;
 use crate::timer::get_time_us;
@@ -238,31 +238,45 @@ pub fn get_slice_buffer(start: usize) -> Option<&'static mut [u8]> {
     TASK_MANAGER.get_slice_buffer(start)
 }
 
-fn mem_in_range(cur_tcb: &TaskControlBlock, start: usize, end: usize) -> bool {
+// fn mem_in_range(cur_tcb: &TaskControlBlock, start: usize, end: usize) -> bool {
+//     let (l, r) = (VirtAddr::from(start), VirtAddr::from(end));
+//     let (lvpn, rvpn) = (l.floor(), r.ceil());
+//     // let (lmin, _) = cur_tcb.memory_set.get_l_r(); 
+//     for area in &cur_tcb.memory_set.areas {
+//         if lvpn <= area.get_start() && rvpn > area.get_start() {
+//             return false;
+//         }
+//     }
+//     true
+// }
+fn get_vpn(start: usize, end: usize)->(VirtPageNum, VirtPageNum) {
     let (l, r) = (VirtAddr::from(start), VirtAddr::from(end));
-    let (lvpn, rvpn) = (l.floor(), r.ceil());
-    let (lmin, rmax) = cur_tcb.memory_set.get_l_r();
-    if lvpn < lmin || rvpn > rmax {
-        return false;
-    }
-    true
+    (l.floor(), r.ceil())
 }
-
-pub fn mmap(start: usize, len: usize, port: u8) -> isize {
+pub fn mmap(start: usize, len: usize, port:  usize) -> isize {
+    if len == 0 {return  0;}
+    // 0，1，2位有效，其他位必须为0,mask => b 0...0111 =>0x7
+    if port & 0x7 == 0 || port & !0x7 != 0 || (start % 4096) != 0 {
+        return -1;
+    }
     let mut inner = TASK_MANAGER.inner.exclusive_access();
     let idx = inner.current_task;
     let cur_tcb = &mut inner.tasks[idx];
-
-    if !mem_in_range(cur_tcb, start, start + len) {
-        return -1;
-    };
-
-    let mut permission = MapPermission::from_bits(port << 1).unwrap();
+    let end = start + len;
+    print!("mmap!!!");
+    let (lvpn, rvpn) = get_vpn(start, end);
+    for area in &cur_tcb.memory_set.areas {
+        if lvpn <= area.get_start() && rvpn > area.get_start() {
+            return -1;
+        }
+    }
+    let mut permission = MapPermission::from_bits((port as u8) << 1).unwrap();
     permission.set(MapPermission::U, true);
 
-    let end = start + len;
     (0..end).step_by(PAGE_SIZE).for_each(|l| {
+        
         let r = end.min(l + PAGE_SIZE);
+        println!("start: {}, end: {}, real end: {}",l, r, end);
         cur_tcb
             .memory_set
             .insert_framed_area(l.into(), r.into(), permission);
@@ -274,7 +288,17 @@ pub fn munmap(start: usize, len: usize) -> isize {
     let mut inner = TASK_MANAGER.inner.exclusive_access();
     let idx = inner.current_task;
     let cur_tcb = &mut inner.tasks[idx];
-    if !mem_in_range(cur_tcb, start, start + len) {
+    let mut cnt = 0;
+    
+    let (lvpn, rvpn) = get_vpn( start, start + len);
+    print!("unmap!!!");
+    for area in &cur_tcb.memory_set.areas {
+        if lvpn <= area.get_start() && rvpn >= area.get_start()
+        {
+            cnt += 1;
+        }
+    }
+    if cnt < rvpn.0 - lvpn.0 {
         return -1;
     }
 

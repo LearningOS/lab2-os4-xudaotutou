@@ -5,7 +5,7 @@ use core::{mem, slice};
 use alloc::task;
 
 use crate::config::MAX_SYSCALL_NUM;
-use crate::mm::{Addr, PageTable, VirtAddr};
+use crate::mm::{ PageTable, VirtAddr};
 use crate::task::{
     current_user_token, exit_current_and_run_next, get_slice_buffer, get_task_info, mmap,
     suspend_current_and_run_next, TaskStatus, munmap,
@@ -67,14 +67,7 @@ pub fn sys_set_priority(_prio: isize) -> isize {
 
 // YOUR JOB: 扩展内核以实现 sys_mmap 和 sys_munmap
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    
-    if _len == 0 {return  0;}
-    // 0，1，2位有效，其他位必须为0,mask => b 0...0111 =>0x7
-    if _port & 0x7 == 0 || _port & !0x7 != 0 || (_start % 4096) != 0 {
-        return -1;
-    }
-
-    mmap(_start, _len, _port as u8)
+    mmap(_start, _len, _port)
 }
 
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {

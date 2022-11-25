@@ -4,13 +4,6 @@ use super::PageTableEntry;
 use crate::config::{PAGE_SIZE, PAGE_SIZE_BITS};
 use core::fmt::{self, Debug, Formatter};
 
-pub trait Addr{
-    type Num;
-    fn floor(&self) ->Self::Num;
-    fn ceil(&self) -> Self::Num;
-    fn page_offset(&self) -> usize;
-    fn aligned(&self) -> bool;
-}
 /// physical address
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct PhysAddr(pub usize);
@@ -95,18 +88,17 @@ impl From<VirtPageNum> for usize {
     }
 }
 
-impl Addr for VirtAddr {
-    type Num = VirtPageNum;
-    fn floor(&self) -> VirtPageNum {
+impl VirtAddr {
+    pub fn floor(&self) -> VirtPageNum {
         VirtPageNum(self.0 / PAGE_SIZE)
     }
-    fn ceil(&self) -> VirtPageNum {
+    pub fn ceil(&self) -> VirtPageNum {
         VirtPageNum((self.0 - 1 + PAGE_SIZE) / PAGE_SIZE)
     }
-    fn page_offset(&self) -> usize {
+    pub fn page_offset(&self) -> usize {
         self.0 & (PAGE_SIZE - 1)
     }
-    fn aligned(&self) -> bool {
+    pub fn aligned(&self) -> bool {
         self.page_offset() == 0
     }
 }
@@ -121,18 +113,17 @@ impl From<VirtPageNum> for VirtAddr {
         Self(v.0 << PAGE_SIZE_BITS)
     }
 }
-impl Addr for PhysAddr {
-    type Num = PhysPageNum;
-    fn floor(&self) -> PhysPageNum {
+impl PhysAddr {
+    pub fn floor(&self) -> PhysPageNum {
         PhysPageNum(self.0 / PAGE_SIZE)
     }
-    fn ceil(&self) -> PhysPageNum {
+    pub fn ceil(&self) -> PhysPageNum {
         PhysPageNum((self.0 - 1 + PAGE_SIZE) / PAGE_SIZE)
     }
-    fn page_offset(&self) -> usize {
+    pub fn page_offset(&self) -> usize {
         self.0 & (PAGE_SIZE - 1)
     }
-    fn aligned(&self) -> bool {
+    pub fn aligned(&self) -> bool {
         self.page_offset() == 0
     }
 }
