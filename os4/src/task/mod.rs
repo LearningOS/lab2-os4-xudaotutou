@@ -82,7 +82,7 @@ impl TaskManager {
     fn run_first_task(&self) -> ! {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
-        Self::set_task_time(next_task);
+        self.set_task_time(next_task);
         next_task.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
@@ -138,7 +138,7 @@ impl TaskManager {
         if let Some(next) = self.find_next_task() {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
-            Self::set_task_time(&mut inner.tasks[next]);
+            self.set_task_time(&mut inner.tasks[next]);
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
@@ -163,25 +163,20 @@ impl TaskManager {
             time: (get_time_us() - cur.start_time) / 1000,
         }
     }
-    fn set_task_time(cur: &mut TaskControlBlock) {
+    fn set_task_time(&self, cur: &mut TaskControlBlock) {
         if cur.start_time == 0 {
             cur.start_time = get_time_us();
         }
     }
+    pub fn update_syscall_time(&self, id: usize) {
+        if id < 500 {
+            let mut inner = self.inner.exclusive_access();
+            let key = inner.current_task;
 
-    // pub fn get_slice_buffer<'b, T: Sized>(&self, start: usize) -> Option<&'b mut T> {
-    //     let satp = self.get_current_token();
-    //     let pt = PageTable::from_token(satp);
-    //     let va = VirtAddr::from(start);
-    //     let vpn = va.floor();
-    //     if pt.translate(vpn).is_none() {
-    //         return None;
-    //     }
-    //     let pte = pt.translate(vpn).unwrap();
-    //     let ppn = pte.ppn();
-    //     let pa = PhysAddr::from(PhysAddr::from(ppn).0 + va.page_offset());
-    //     pa.get_mut::<T>()
-    // }
+            let cur = &mut inner.tasks[key];
+            cur.syscall_times[id] += 1;
+        }
+    }
 }
 
 /// Run the first task in task list.
@@ -230,7 +225,9 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 pub fn get_task_info() -> TaskInfo {
     TASK_MANAGER.get_task_info()
 }
-
+pub fn update_syscall_time(id: usize) {
+    TASK_MANAGER.update_syscall_time(id);
+}
 pub fn get_slice_buffer<'a, T>(start: usize) -> Option<&'a mut T> {
     // TASK_MANAGER.get_slice_buffer::<T>(start)
     let satp = TASK_MANAGER.get_current_token();
@@ -246,17 +243,6 @@ pub fn get_slice_buffer<'a, T>(start: usize) -> Option<&'a mut T> {
     }
 }
 
-// fn mem_in_range(cur_tcb: &TaskControlBlock, start: usize, end: usize) -> bool {
-//     let (l, r) = (VirtAddr::from(start), VirtAddr::from(end));
-//     let (lvpn, rvpn) = (l.floor(), r.ceil());
-//     // let (lmin, _) = cur_tcb.memory_set.get_l_r();
-//     for area in &cur_tcb.memory_set.areas {
-//         if lvpn <= area.get_start() && rvpn > area.get_start() {
-//             return false;
-//         }
-//     }
-//     true
-// }
 fn get_vpn(start: usize, end: usize) -> (VirtPageNum, VirtPageNum) {
     let (l, r) = (VirtAddr::from(start), VirtAddr::from(end));
     (l.floor(), r.ceil())
@@ -297,7 +283,7 @@ pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
             .memory_set
             .insert_framed_area(l.into(), r.into(), permission);
     });
-    
+
     0
 }
 
