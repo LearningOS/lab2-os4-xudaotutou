@@ -59,21 +59,19 @@ impl MemorySet {
         );
     }
     pub fn remove_framed_area(&mut self, start: usize, end: usize) {
-        let pt = &mut self.page_table;
-        self.areas.iter_mut().for_each(|item| {
-            let (l, r) = item.get_l_r();
-            if start <= l.into() && r < end.into() {
-                item.unmap(pt);
-            }
-        })
-    }
-    pub fn clean_area(&mut self) {
-        // let res: Vec<MapArea> =
         self.areas = self
             .areas
             .clone()
             .into_iter()
-            .filter(|item| item.data_frames.len() > 0)
+            .filter_map(|mut item| {
+                let l = item.get_start();
+                if start <= l.into() && l < end.into() {
+                    item.unmap(&mut self.page_table);
+                    None
+                } else {
+                    Some(item)
+                }
+            })
             .collect::<Vec<MapArea>>();
     }
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
@@ -96,7 +94,7 @@ impl MemorySet {
     pub fn new_kernel() -> Self {
         let mut memory_set = Self::new_bare();
         // map trampoline
-        println!("memory_set:{:#x}",memory_set.token());
+        println!("memory_set:{:#x}", memory_set.token());
         memory_set.map_trampoline();
         // map kernel sections
         info!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
@@ -236,16 +234,16 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
-    pub fn get_l_r(&self) -> (VirtPageNum, VirtPageNum) {
-        self.areas
-            .iter()
-            .fold((MEMORY_END.into(), 0x0000_0000.into()), |(l, r), area| {
-                let (_l, _r) = area.get_l_r();
-                let (l,r) = (l.min(_l), r.max(_r));
-                info!("[memeory set get_l_r] vpl:{},vpr:{}",l.0,r.0);
-                (l, r)
-            })
-    }
+    // pub fn get_l_r(&self) -> (VirtPageNum, VirtPageNum) {
+    //     self.areas
+    //         .iter()
+    //         .fold((MEMORY_END.into(), 0x0000_0000.into()), |(l, r), area| {
+    //             let (_l, _r) = area.get_l_r();
+    //             let (l,r) = (l.min(_l), r.max(_r));
+    //             info!("[memeory set get_l_r] vpl:{},vpr:{}",l.0,r.0);
+    //             (l, r)
+    //         })
+    // }
 }
 
 /// map area structure, controls a contiguous piece of virtual memory
@@ -301,7 +299,11 @@ impl MapArea {
         page_table.unmap(vpn);
     }
     pub fn map(&mut self, page_table: &mut PageTable) {
-        info!("vpn_range: start: {:?}, end: {:?}", self.vpn_range.get_start(), self.vpn_range.get_end());
+        info!(
+            "vpn_range: start: {:?}, end: {:?}",
+            self.vpn_range.get_start(),
+            self.vpn_range.get_end()
+        );
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
         }
@@ -341,12 +343,12 @@ impl MapArea {
         // .
     }
 
-    pub fn get_l_r(&self) -> (VirtPageNum, VirtPageNum) {
-        let (l, r) = (self.vpn_range.get_start(), self.vpn_range.get_end());
-        info!("memeory area, l:{:?},r:{:?}",l, r );
-        (l, r)
-    }
-    pub fn get_start(&self)->VirtPageNum{
+    // pub fn get_l_r(&self) -> (VirtPageNum, VirtPageNum) {
+    //     let (l, r) = (self.vpn_range.get_start(), self.vpn_range.get_end());
+    //     info!("memeory area, l:{:?},r:{:?}",l, r );
+    //     (l, r)
+    // }
+    pub fn get_start(&self) -> VirtPageNum {
         self.vpn_range.get_start()
     }
 }

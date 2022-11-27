@@ -298,31 +298,26 @@ pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
 }
 
 pub fn munmap(start: usize, len: usize) -> isize {
+    if len == 0 {
+        return 0;
+    }
     let mut inner = TASK_MANAGER.inner.exclusive_access();
     let idx = inner.current_task;
     let cur_tcb = &mut inner.tasks[idx];
-    // let mut cnt = 0;
 
     let (lvpn, rvpn) = get_vpn(start, start + len);
     println!("unmap!!!");
-    // for area in &cur_tcb.memory_set.areas {
-    //     if lvpn <= area.get_start() && rvpn >= area.get_start() {
-    //         cnt += 1;
-    //     }
-    // }
-    // if cnt < rvpn.0 - lvpn.0 {
-    //     return -1;
-    // }
-
-    if cur_tcb
+    // 确认 unamp 的范围的确是当前申请的 memory_set中
+    let cnt = cur_tcb
         .memory_set
         .areas
         .iter()
-        .any(|area| lvpn > area.get_start() || rvpn < area.get_start())
-    {
+        .filter(|area| lvpn <= area.get_start() && area.get_start() <= rvpn)
+        .count();
+    if cnt < rvpn.0 - lvpn.0 {
         return -1;
     }
     cur_tcb.memory_set.remove_framed_area(start, start + len);
-    cur_tcb.memory_set.clean_area();
+    // cur_tcb.memory_set.clean_area();
     0
 }

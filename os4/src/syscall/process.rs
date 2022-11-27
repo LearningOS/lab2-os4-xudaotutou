@@ -47,7 +47,7 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
         usec,
     };
     if let Some(buffer) = get_slice_buffer::<TimeVal>(_ts as usize) {
-        println!("[get time] ts: {:?},buffer:", ts);
+        // println!("[get time] ts: {:?},buffer:", ts);
         *buffer = ts;
         0
     } else {
@@ -66,9 +66,6 @@ pub fn sys_mmap(_start: usize, _len: usize, _prot: usize) -> isize {
 }
 
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    if _len == 0 {
-        return 0;
-    }
     munmap(_start, _len)
 }
 
@@ -76,7 +73,6 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
 pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     let task_info = get_task_info();
     if let Some(buffer) = get_slice_buffer::<TaskInfo>(ti as usize) {
-
         *buffer = task_info;
         0
     } else {
