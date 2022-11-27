@@ -126,6 +126,9 @@ impl PhysAddr {
     pub fn aligned(&self) -> bool {
         self.page_offset() == 0
     }
+    pub fn get_mut<'a, T>(&self) -> Option<&'a mut T> {
+        unsafe { ((self.0 + self.page_offset()) as *mut T).as_mut() }
+    }
 }
 impl From<PhysAddr> for PhysPageNum {
     fn from(v: PhysAddr) -> Self {

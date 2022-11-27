@@ -44,16 +44,8 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
         sec: _us / 1_000_000,
         usec: _us % 1_000_000,
     };
-    if let Some(buffer) = get_slice_buffer(_ts as usize) {
-        let data = unsafe {
-            slice::from_raw_parts(
-                (&ts as *const TimeVal) as *const u8,
-                mem::size_of::<TimeVal>(),
-            )
-        };
-        data.iter().enumerate().for_each(|(i, d)| {
-            buffer[i] = *d;
-        });
+    if let Some(buffer) = get_slice_buffer::<TimeVal>(_ts as usize) {
+        *buffer = ts;
         0
     } else {
         -1
@@ -66,8 +58,8 @@ pub fn sys_set_priority(_prio: isize) -> isize {
 }
 
 // YOUR JOB: 扩展内核以实现 sys_mmap 和 sys_munmap
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    mmap(_start, _len, _port)
+pub fn sys_mmap(_start: usize, _len: usize, _prot: usize) -> isize {
+    mmap(_start, _len, _prot)
 }
 
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
@@ -78,16 +70,8 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
 // YOUR JOB: 引入虚地址后重写 sys_task_info
 pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     let task_info = get_task_info();
-    if let Some(buffer) = get_slice_buffer(ti as usize) {
-        let data = unsafe {
-            slice::from_raw_parts(
-                (&task_info as *const TaskInfo) as *const u8,
-                mem::size_of::<TaskInfo>(),
-            )
-        };
-        data.iter().enumerate().for_each(|(i, &d)| {
-            buffer[i] = d;
-        });
+    if let Some(buffer) = get_slice_buffer::<TaskInfo>(ti as usize) {
+        *buffer = task_info;
         0
     } else {
         -1
