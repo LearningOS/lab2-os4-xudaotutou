@@ -263,10 +263,12 @@ fn get_vpn(start: usize, end: usize) -> (VirtPageNum, VirtPageNum) {
 }
 pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
     if len == 0 {
+        info!("reason1");
         return 0;
     }
     // 0，1，2位有效，其他位必须为0,mask => b 0...0111 =>0x7
-    if prot & 0x7 == 0 || prot & !0x7 != 0 || (start % 4096) != 0 {
+    if (prot >> 3) != 0 || (prot & 0x7) == 0 || start % 4096 != 0 {
+        info!("reason2");
         return -1;
     }
     let mut inner = TASK_MANAGER.inner.exclusive_access();
@@ -275,6 +277,7 @@ pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
     let end = start + len;
     println!("mmap!!!");
     let (lvpn, rvpn) = get_vpn(start, end);
+
     if cur_tcb
         .memory_set
         .areas
@@ -294,12 +297,16 @@ pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
             .memory_set
             .insert_framed_area(l.into(), r.into(), permission);
     });
+    
     0
 }
 
 pub fn munmap(start: usize, len: usize) -> isize {
     if len == 0 {
         return 0;
+    }
+    if start % 4096 != 0 {
+        return -1;
     }
     let mut inner = TASK_MANAGER.inner.exclusive_access();
     let idx = inner.current_task;
