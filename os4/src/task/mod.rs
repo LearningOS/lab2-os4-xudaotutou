@@ -16,7 +16,7 @@ mod task;
 
 use crate::config::PAGE_SIZE;
 use crate::loader::{get_app_data, get_num_app};
-use crate::mm::{MapPermission, PageTable, VirtAddr, VirtPageNum, PhysAddr};
+use crate::mm::{MapPermission, PageTable, PhysAddr, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::syscall::TaskInfo;
 use crate::timer::get_time_us;
@@ -169,19 +169,19 @@ impl TaskManager {
         }
     }
 
-    pub fn get_slice_buffer<'b, T: Sized>(&self, start: usize) -> Option<&'b mut T> {
-        let satp = self.get_current_token();
-        let pt = PageTable::from_token(satp);
-        let va = VirtAddr::from(start);
-        let vpn = va.floor();
-        if pt.translate(vpn).is_none() {
-            return None;
-        }
-        let pte = pt.translate(vpn).unwrap();
-        let ppn = pte.ppn();
-        let pa = PhysAddr::from(PhysAddr::from(ppn).0 + va.page_offset());
-        pa.get_mut::<T>()
-    }
+    // pub fn get_slice_buffer<'b, T: Sized>(&self, start: usize) -> Option<&'b mut T> {
+    //     let satp = self.get_current_token();
+    //     let pt = PageTable::from_token(satp);
+    //     let va = VirtAddr::from(start);
+    //     let vpn = va.floor();
+    //     if pt.translate(vpn).is_none() {
+    //         return None;
+    //     }
+    //     let pte = pt.translate(vpn).unwrap();
+    //     let ppn = pte.ppn();
+    //     let pa = PhysAddr::from(PhysAddr::from(ppn).0 + va.page_offset());
+    //     pa.get_mut::<T>()
+    // }
 }
 
 /// Run the first task in task list.
@@ -232,7 +232,18 @@ pub fn get_task_info() -> TaskInfo {
 }
 
 pub fn get_slice_buffer<'a, T>(start: usize) -> Option<&'a mut T> {
-    TASK_MANAGER.get_slice_buffer::<T>(start)
+    // TASK_MANAGER.get_slice_buffer::<T>(start)
+    let satp = TASK_MANAGER.get_current_token();
+    let pt = PageTable::from_token(satp);
+    let va = VirtAddr::from(start);
+    let vpn = va.vpn();
+    if let Some(pte) = pt.translate(vpn) {
+        let ppn = pte.ppn();
+        let pa = PhysAddr::from(PhysAddr::from(ppn).0 | va.page_offset());
+        pa.get_mut::<T>()
+    } else {
+        None
+    }
 }
 
 // fn mem_in_range(cur_tcb: &TaskControlBlock, start: usize, end: usize) -> bool {
@@ -303,7 +314,12 @@ pub fn munmap(start: usize, len: usize) -> isize {
     //     return -1;
     // }
 
-    if cur_tcb.memory_set.areas.iter().any(|area| lvpn > area.get_start() || rvpn < area.get_start()) {
+    if cur_tcb
+        .memory_set
+        .areas
+        .iter()
+        .any(|area| lvpn > area.get_start() || rvpn < area.get_start())
+    {
         return -1;
     }
     cur_tcb.memory_set.remove_framed_area(start, start + len);

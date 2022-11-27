@@ -92,6 +92,9 @@ impl VirtAddr {
     pub fn floor(&self) -> VirtPageNum {
         VirtPageNum(self.0 / PAGE_SIZE)
     }
+    pub fn vpn(&self)->VirtPageNum {
+        self.floor()
+    }
     pub fn ceil(&self) -> VirtPageNum {
         VirtPageNum((self.0 - 1 + PAGE_SIZE) / PAGE_SIZE)
     }
@@ -126,8 +129,9 @@ impl PhysAddr {
     pub fn aligned(&self) -> bool {
         self.page_offset() == 0
     }
+    pub fn ppn(&self)->PhysPageNum {self.floor()}
     pub fn get_mut<'a, T>(&self) -> Option<&'a mut T> {
-        unsafe { ((self.0 + self.page_offset()) as *mut T).as_mut() }
+        unsafe { (self.0 as *mut T).as_mut() }
     }
 }
 impl From<PhysAddr> for PhysPageNum {
