@@ -264,13 +264,14 @@ pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
     println!("mmap!!!");
     let (lvpn, rvpn) = get_vpn(start, end);
 
+    // 有无映射过
     if cur_tcb
         .memory_set
         .areas
         .iter()
-        .any(|area| lvpn <= area.get_start() && rvpn > area.get_start())
+        .any(|area| lvpn < area.get_end() && rvpn > area.get_start())
     {
-        println!("l, r ,s {:?}, {:?}", lvpn, rvpn);
+        println!("already mapped");
         return -1;
     }
     let mut permission = MapPermission::from_bits((prot as u8) << 1).unwrap();
@@ -301,16 +302,24 @@ pub fn munmap(start: usize, len: usize) -> isize {
     let (lvpn, rvpn) = get_vpn(start, start + len);
     println!("unmap!!!");
     // 确认 unamp 的范围的确是当前申请的 memory_set中
-    let cnt = cur_tcb
+    let cnt:usize = cur_tcb
         .memory_set
         .areas
         .iter()
-        .filter(|area| lvpn <= area.get_start() && area.get_start() <= rvpn)
-        .count();
+        .filter_map(|area| {
+            if lvpn <= area.get_start() && area.get_end() <= rvpn {
+                Some(area.get_end().0 - area.get_start().0)
+            } else {
+                None
+            }
+        })
+        .sum();
     if cnt < rvpn.0 - lvpn.0 {
         return -1;
     }
-    cur_tcb.memory_set.remove_framed_area(start, start + len);
+    println!("unmap!!! real");
+    let (l, r) = get_vpn(start, start + len);
+    cur_tcb.memory_set.remove_framed_area(l, r);
     // cur_tcb.memory_set.clean_area();
     0
 }

@@ -131,7 +131,7 @@ impl PhysAddr {
     }
     pub fn ppn(&self)->PhysPageNum {self.floor()}
     pub fn get_mut<'a, T>(&self) -> Option<&'a mut T> {
-        unsafe { (self.0 as *mut T).as_mut() }
+        unsafe { ((self.0) as *mut T).as_mut() }
     }
 }
 impl From<PhysAddr> for PhysPageNum {

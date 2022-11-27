@@ -59,14 +59,18 @@ impl MemorySet {
             None,
         );
     }
-    pub fn remove_framed_area(&mut self, start: usize, end: usize) {
+    pub fn remove_framed_area(&mut self, start: VirtPageNum, end: VirtPageNum) {
+
         self.areas = self
             .areas
             .to_owned()
             .into_iter()
             .filter_map(|mut item| {
                 let l = item.get_start();
-                if start <= l.into() && l < end.into() {
+                let r = item.get_end();
+                info!("[unmap]: l: {:?}, r: {:?}, start: {:?}, end: {:?}",l,r,start, end);
+                if start <= l && r <= end {
+                    info!("[unmap]: l: {:?}, r: {:?}",l,r);
                     item.unmap(&mut self.page_table);
                     None
                 } else {
@@ -351,6 +355,9 @@ impl MapArea {
     // }
     pub fn get_start(&self) -> VirtPageNum {
         self.vpn_range.get_start()
+    }
+    pub fn get_end(&self) ->VirtPageNum{
+        self.vpn_range.get_end()
     }
 }
 
