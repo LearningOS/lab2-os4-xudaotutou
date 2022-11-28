@@ -136,6 +136,7 @@ impl TaskManager {
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
         if let Some(next) = self.find_next_task() {
+            info!("next_task: app_{}",next);
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             self.set_task_time(&mut inner.tasks[next]);
@@ -243,10 +244,6 @@ pub fn get_slice_buffer<'a, T>(start: usize) -> Option<&'a mut T> {
     }
 }
 
-fn get_vpn(start: usize, end: usize) -> (VirtPageNum, VirtPageNum) {
-    let (l, r) = (VirtAddr::from(start), VirtAddr::from(end));
-    (l.floor(), r.ceil())
-}
 pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
     if len == 0 {
         info!("reason1");
@@ -262,30 +259,7 @@ pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
     let cur_tcb = &mut inner.tasks[idx];
     let end = start + len;
     println!("mmap!!!");
-    let (lvpn, rvpn) = get_vpn(start, end);
-
-    // 有无映射过
-    if cur_tcb
-        .memory_set
-        .areas
-        .iter()
-        .any(|area| lvpn < area.get_end() && rvpn > area.get_start())
-    {
-        println!("already mapped");
-        return -1;
-    }
-    let mut permission = MapPermission::from_bits((prot as u8) << 1).unwrap();
-    permission.set(MapPermission::U, true);
-
-    (start..=end).step_by(PAGE_SIZE).for_each(|l| {
-        let r = end.min(l + PAGE_SIZE);
-        println!("start: {}, end: {}, real end: {}", l, r, end);
-        cur_tcb
-            .memory_set
-            .insert_framed_area(l.into(), r.into(), permission);
-    });
-
-    0
+    cur_tcb.memory_set.mmap(start, end,prot)
 }
 
 pub fn munmap(start: usize, len: usize) -> isize {
@@ -298,28 +272,5 @@ pub fn munmap(start: usize, len: usize) -> isize {
     let mut inner = TASK_MANAGER.inner.exclusive_access();
     let idx = inner.current_task;
     let cur_tcb = &mut inner.tasks[idx];
-
-    let (lvpn, rvpn) = get_vpn(start, start + len);
-    println!("unmap!!!");
-    // 确认 unamp 的范围的确是当前申请的 memory_set中
-    let cnt:usize = cur_tcb
-        .memory_set
-        .areas
-        .iter()
-        .filter_map(|area| {
-            if lvpn <= area.get_start() && area.get_end() <= rvpn {
-                Some(area.get_end().0 - area.get_start().0)
-            } else {
-                None
-            }
-        })
-        .sum();
-    if cnt < rvpn.0 - lvpn.0 {
-        return -1;
-    }
-    println!("unmap!!! real");
-    let (l, r) = get_vpn(start, start + len);
-    cur_tcb.memory_set.remove_framed_area(l, r);
-    // cur_tcb.memory_set.clean_area();
-    0
+    cur_tcb.memory_set.munmap(start, start + len)
 }

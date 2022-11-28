@@ -97,11 +97,11 @@ impl PageTable {
         //     }
         //     ppn = pte.ppn();
         // }
-        // result;
+        // result
         vpn.indexes() // 遍历三个虚拟页号
             .iter()
             .enumerate()
-            .fold((self.root_ppn, None), |(ppn, _), (i,&idx)| {
+            .fold((self.root_ppn, None), |(ppn, _), (i, &idx)| {
                 let pte = &mut ppn.get_pte_array()[idx];
 
                 if i == 2 {
@@ -137,32 +137,35 @@ impl PageTable {
             ppn = pte.ppn();
         }
         result
-        // vpn.indexes()
+        // vpn.indexes() // 遍历三个虚拟页号
         //     .iter()
-        //     .try_fold((self.root_ppn, None), |(ppn, _), &idx| {
+        //     .enumerate()
+        //     .fold((self.root_ppn, None), |(ppn, _), (i, &idx)| {
         //         let pte = &ppn.get_pte_array()[idx];
 
+        //         if i == 2 {
+        //             return (pte.ppn(), Some(pte));
+        //         }
         //         if !pte.is_valid() {
-        //             return ControlFlow::Break((pte.ppn(), Some(pte)));
+        //             return (ppn,None);
         //         }
         //         // 指向下一个节点
         //         // 目前来看没有必要去打断来生成None
-        //         ControlFlow::Continue((pte.ppn(), Some(pte)))
+        //         // 这里第三次间指必须要跳过，应该已经不是页表管理了
+        //         (pte.ppn(), None)
         //     })
-        //     .continue_value()
-        //     .unwrap_or_default(None)
         //     .1
     }
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
-        // println!("[pte] is_valid {:?}", pte.is_valid());
-        // assert!(pte.is_valid());
+        // info!("[pte][map]:{:?}",vpn);
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
     }
     #[allow(unused)]
     pub fn unmap(&mut self, vpn: VirtPageNum) {
+        // if {info!("[pte][unmap]:{:?}",vpn);}
         let pte = self.find_pte_create(vpn).unwrap();
         assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
         *pte = PageTableEntry::empty();

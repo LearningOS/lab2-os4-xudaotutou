@@ -5,6 +5,7 @@ use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE};
+use crate::mm::frame_allocator::{show_frame_status, FRAME_ALLOCATOR};
 use alloc::borrow::ToOwned;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -59,26 +60,145 @@ impl MemorySet {
             None,
         );
     }
-    pub fn remove_framed_area(&mut self, start: VirtPageNum, end: VirtPageNum) {
+    pub fn mmap(&mut self, start: usize, end: usize, prot: usize) -> isize {
+        let (lvpn, rvpn) = (VirtAddr::from(start).floor(), VirtAddr::from(end).ceil());
+        let range = VPNRange::new(lvpn, rvpn);
 
-        self.areas = self
-            .areas
-            .to_owned()
+        self.areas.iter().for_each(|area| {
+            info!("l, r, {:?}, {:?}", area.get_start(), area.get_end());
+        });
+        info!(
+            "[map]: lvpn: {:?}, rvpn: {:?}, start: {:#x},end: {:#x}, pt: {:#x}",
+            lvpn,
+            rvpn,
+            start,
+            end,
+            self.page_table.token()
+        );
+        if range
             .into_iter()
-            .filter_map(|mut item| {
-                let l = item.get_start();
-                let r = item.get_end();
-                info!("[unmap]: l: {:?}, r: {:?}, start: {:?}, end: {:?}",l,r,start, end);
-                if start <= l && r <= end {
-                    info!("[unmap]: l: {:?}, r: {:?}",l,r);
-                    item.unmap(&mut self.page_table);
-                    None
-                } else {
-                    Some(item)
+            .any(|vpn| match self.page_table.translate(vpn) {
+                Some(v) => {
+                    println!("?1: {:?}, {:?}", vpn, v.ppn());
+                    if v.ppn().0 == 0x0 {
+                        false
+                    } else {
+                        true
+                    }
                 }
+                None => false,
             })
-            .collect::<Vec<MapArea>>();
+        {
+            println!("already mapped");
+            return -1;
+        }
+        let mut permission = MapPermission::from_bits((prot as u8) << 1).unwrap();
+        permission.set(MapPermission::U, true);
+
+        self.insert_framed_area(start.into(), end.into(), permission);
+
+        info!("[map] [test] ");
+        range.into_iter().for_each(|vpn| {
+            match self.translate(vpn) {
+                Some(v) => info!("yes {:?}", v.ppn()),
+                None => info!("male"),
+            };
+        });
+        self.areas.iter().for_each(|area| {
+            let (lvpn, rvpn) = (area.get_start(), area.get_end());
+            info!(
+                "l, r, {:?}, {:?}, {:?}, {:?}",
+                area.get_start(),
+                area.get_end(),
+                self.translate(lvpn).unwrap().ppn(),
+                self.translate(rvpn).unwrap().ppn()
+            );
+        });
+        show_frame_status();
+        0
     }
+    pub fn munmap(&mut self, start: usize, end: usize) -> isize {
+        let (start, end) = (VirtAddr::from(start).floor(), VirtAddr::from(end).floor());
+        let range = VPNRange::new(start, end);
+        println!("unmap!!!");
+        if range
+            .into_iter()
+            .any(|vpn| self.page_table.translate(vpn).is_none())
+        {
+            info!("[remove frame] not");
+            return -1;
+        }
+        // info!("unmap!!! real pt: {:#x}", self.page_table.token());
+        // self.areas = self
+        //     .areas
+        //     .to_owned()
+        //     .into_iter()
+        //     .filter_map(|mut area| {
+        //         show_frame_status();
+        //         因为自动drop会导致回收行为，丢失所有权就寄了
+        //         let l = area.get_start();
+        //         let r = area.get_end();
+        //         info!(
+        //             "[unmap] [find]: l: {:?}, r: {:?}, start: {:?}, end: {:?}",
+        //             l, r, start, end
+        //         );
+        //         if l < r && start <= l && r <= end {
+        //             info!("[unmap]: success,l,r:({:?}, {:?})", l, r);
+        //             match self.translate(l) {
+        //                 Some(v) => info!("male {:?}", v.ppn()),
+        //                 None => info!("yes"),
+        //             }
+        //             area.unmap(&mut self.page_table);
+        //             None
+        //         } else {
+        //             Some(area)
+        //         }
+        //     })
+        //     .collect::<Vec<MapArea>>();
+        let pte = &mut self.page_table;
+        self.areas.iter_mut().for_each(|area| {
+            let l = area.get_start();
+            let r = area.get_end();
+            info!(
+                "[unmap] [find]: l: {:?}, r: {:?}, start: {:?}, end: {:?}",
+                l, r, start, end
+            );
+            if start <= l && r <= end {
+                // info!("[unmap]: success,l,r:({:?}, {:?})", l, r);
+                // match self.translate(l) {
+                //     Some(v) => info!("male {:?}", v.ppn()),
+                //     None => info!("yes"),
+                // }
+                area.unmap(pte);
+            }
+        });
+        self.areas.retain(|area|area.get_end() > area.get_start());
+        info!("[unmap] [test] ");
+        range.into_iter().for_each(|vpn| match self.translate(vpn) {
+            Some(v) => info!("male {:?}", v.ppn()),
+            None => info!("yes"),
+        });
+        show_frame_status();
+        0
+    }
+    // pub fn remove_framed_area(&mut self, start: usize, end: usize) {
+    //     let pt = &mut self.page_table;
+    //     self.areas.iter_mut().for_each(|item| {
+    //         let (l, r) = item.get_l_r();
+    //         if start <= l.into() && r < end.into() {
+    //             item.unmap(pt);
+    //         }
+    //     })
+    // }
+    // pub fn clean_area(&mut self) {
+    //     // let res: Vec<MapArea> =
+    //     self.areas = self
+    //         .areas
+    //         .clone()
+    //         .into_iter()
+    //         .filter(|item| item.data_frames.len() > 0)
+    //         .collect::<Vec<MapArea>>();
+    // }
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
@@ -356,7 +476,7 @@ impl MapArea {
     pub fn get_start(&self) -> VirtPageNum {
         self.vpn_range.get_start()
     }
-    pub fn get_end(&self) ->VirtPageNum{
+    pub fn get_end(&self) -> VirtPageNum {
         self.vpn_range.get_end()
     }
 }

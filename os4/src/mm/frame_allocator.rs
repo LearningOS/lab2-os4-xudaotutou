@@ -34,6 +34,8 @@ impl Debug for FrameTracker {
 
 impl Drop for FrameTracker {
     fn drop(&mut self) {
+        // 个人认为并不是很好的设计，可能会带来超出预期的副作用
+        // 当frame_dealloc时，页表管理模块会工作失常
         frame_dealloc(self.ppn);
     }
 }
@@ -80,6 +82,7 @@ impl FrameAllocator for StackFrameAllocator {
         let ppn = ppn.0;
         // validity check
         if ppn >= self.current || self.recycled.iter().any(|v| *v == ppn) {
+            info!("[frame],{:?}, cur: {:#x}, ppn: {}",self.recycled,self.current,ppn);
             panic!("Frame ppn={:#x} has not been allocated!", ppn);
         }
         // recycle
@@ -114,6 +117,11 @@ pub fn frame_alloc() -> Option<FrameTracker> {
         .map(FrameTracker::new)
 }
 
+pub fn show_frame_status(){
+    let frame=FRAME_ALLOCATOR
+    .exclusive_access();
+    info!("recycled: {:?}, cur: {:#x}, end: {:#x}", frame.recycled,frame.current, frame.end);
+}
 /// deallocate a frame
 fn frame_dealloc(ppn: PhysPageNum) {
     FRAME_ALLOCATOR.exclusive_access().dealloc(ppn);
