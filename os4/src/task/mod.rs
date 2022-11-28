@@ -136,7 +136,7 @@ impl TaskManager {
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
         if let Some(next) = self.find_next_task() {
-            info!("next_task: app_{}",next);
+            // info!("next_task: app_{}",next);
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             self.set_task_time(&mut inner.tasks[next]);
@@ -249,6 +249,9 @@ pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
         info!("reason1");
         return 0;
     }
+    // if len % 4096 != 0 {
+    //     return  -1;
+    // }
     // 0，1，2位有效，其他位必须为0,mask => b 0...0111 =>0x7
     if (prot >> 3) != 0 || (prot & 0x7) == 0 || start % 4096 != 0 {
         info!("reason2");
@@ -267,7 +270,7 @@ pub fn munmap(start: usize, len: usize) -> isize {
         return 0;
     }
     if start % 4096 != 0 {
-        return -1;
+        return  -1;
     }
     let mut inner = TASK_MANAGER.inner.exclusive_access();
     let idx = inner.current_task;

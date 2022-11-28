@@ -118,12 +118,24 @@ impl MemorySet {
         0
     }
     pub fn munmap(&mut self, start: usize, end: usize) -> isize {
-        let (start, end) = (VirtAddr::from(start).floor(), VirtAddr::from(end).floor());
+        println!("unmap!!!,start: {:#x}, end: {:#x}", start, end);
+        let (start, end) = (VirtAddr::from(start).floor(), VirtAddr::from(end).ceil());
         let range = VPNRange::new(start, end);
-        println!("unmap!!!");
+        // println!("unmap!!!");
         if range
             .into_iter()
-            .any(|vpn| self.page_table.translate(vpn).is_none())
+            .any(|vpn| 
+                match self.page_table.translate(vpn) {
+                    Some(v) => {
+                        println!("?1: {:?}, {:?}", vpn, v.ppn());
+                        if v.ppn().0 == 0x0 {
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    None => true,}
+            )
         {
             info!("[remove frame] not");
             return -1;
@@ -164,7 +176,7 @@ impl MemorySet {
                 l, r, start, end
             );
             if start <= l && r <= end {
-                // info!("[unmap]: success,l,r:({:?}, {:?})", l, r);
+                info!("[unmap]: success,l,r:({:?}, {:?})", l, r);
                 // match self.translate(l) {
                 //     Some(v) => info!("male {:?}", v.ppn()),
                 //     None => info!("yes"),
